@@ -1,0 +1,107 @@
+﻿TAP version 13
+# Subtest: CyberNyte database and REST workflows
+    # Subtest: anonymous requests and SQL injection login are rejected
+    ok 1 - anonymous requests and SQL injection login are rejected
+      ---
+      duration_ms: 88.211
+      ...
+    # Subtest: login, session cookie, and seed records from real SQL
+    ok 2 - login, session cookie, and seed records from real SQL
+      ---
+      duration_ms: 61.3384
+      ...
+    # Subtest: staff cannot access user management or reports, including direct API calls
+    ok 3 - staff cannot access user management or reports, including direct API calls
+      ---
+      duration_ms: 61.8789
+      ...
+    # Subtest: station create, read/details, search, update, deactivate, reactivate
+    ok 4 - station create, read/details, search, update, deactivate, reactivate
+      ---
+      duration_ms: 92.385
+      ...
+    # Subtest: invalid values, nonexistent records, and FK deletion produce meaningful errors
+    ok 5 - invalid values, nonexistent records, and FK deletion produce meaningful errors
+      ---
+      duration_ms: 32.7389
+      ...
+    # Subtest: customer create/update/details and parameterized literal input
+    ok 6 - customer create/update/details and parameterized literal input
+      ---
+      duration_ms: 63.7476
+      ...
+    # Subtest: concurrent session starts allow only one active session per station
+    ok 7 - concurrent session starts allow only one active session per station
+      ---
+      duration_ms: 46.2053
+      ...
+    # Subtest: session end computes server charge and preserves rate snapshot
+    ok 8 - session end computes server charge and preserves rate snapshot
+      ---
+      duration_ms: 43.3572
+      ...
+    # Subtest: concurrent payments cannot exceed the remaining balance
+    ok 9 - concurrent payments cannot exceed the remaining balance
+      ---
+      duration_ms: 15.6079
+      ...
+    # Subtest: reservations persist IDs, reject overlaps and invalid dates, update and cancel
+    ok 10 - reservations persist IDs, reject overlaps and invalid dates, update and cancel
+      ---
+      duration_ms: 54.3223
+      ...
+    # Subtest: categories support create/edit/deactivate and protect linked records
+    ok 11 - categories support create/edit/deactivate and protect linked records
+      ---
+      duration_ms: 48.4616
+      ...
+    # Subtest: food/image upload, binary retrieval, replace and image removal
+    ok 12 - food/image upload, binary retrieval, replace and image removal
+      ---
+      duration_ms: 90.7019
+      ...
+    # Subtest: invalid image files are rejected without creating records
+    ok 13 - invalid image files are rejected without creating records
+      ---
+      duration_ms: 4.3763
+      ...
+    # Subtest: orders use server prices, persist detail lines, and enforce state transitions
+    ok 14 - orders use server prices, persist detail lines, and enforce state transitions
+      ---
+      duration_ms: 69.8334
+      ...
+    # Subtest: unreferenced food can be deleted; availability is editable
+    ok 15 - unreferenced food can be deleted; availability is editable
+      ---
+      duration_ms: 27.8818
+      ...
+    # Subtest: admin accounts, last-admin guard, and shared preferences
+    ok 16 - admin accounts, last-admin guard, and shared preferences
+      ---
+      duration_ms: 56.8002
+      ...
+Database verified: 8.4.4
+    # Subtest: reports match persisted payments and source files are not public
+    ok 17 - reports match persisted payments and source files are not public
+      ---
+      duration_ms: 13.1838
+      ...
+    # Subtest: logout invalidates the authenticated session
+    ok 18 - logout invalidates the authenticated session
+      ---
+      duration_ms: 3.3431
+      ...
+    1..18
+ok 1 - CyberNyte database and REST workflows
+  ---
+  duration_ms: 2296.7922
+  ...
+1..1
+# tests 19
+# suites 0
+# pass 19
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2302.4344

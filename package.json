@@ -1,0 +1,22 @@
+{
+  "name": "cybernyte",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local computer shop management system",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js",
+    "db:setup": "node scripts/setup-db.js",
+    "test": "node tests/api.test.js",
+    "test:e2e": "node tests/browser.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "dotenv": "^17.0.0",
+    "express": "^5.1.0",
+    "express-session": "^1.18.1",
+    "multer": "^2.0.2",
+    "mysql2": "^3.14.0"
+  },
+  "devDependencies": { "@playwright/test": "^1.56.0" }
+}

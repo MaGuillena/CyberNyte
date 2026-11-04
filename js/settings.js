@@ -49,18 +49,14 @@ const Settings = {
         <label class="checkbox"><input type="checkbox" data-action="pref-motion" ${s.prefs.reduceMotion ? 'checked' : ''}> Reduce animations</label>
       </section>
 
-      ${isAdmin ? `<section class="card" aria-labelledby="set-demo-title">
-        <div class="card-head"><h2 id="set-demo-title">Demo data</h2></div>
-        <p class="muted">This prototype stores sample data in this browser only (localStorage). It is not a real database. Resetting rebuilds the sample customers, sessions, reservations and payments relative to the current time.</p>
-        <button type="button" class="btn btn-danger" data-action="reset-demo">${icon('power')} Reset demo data</button>
-      </section>` : ''}`;
+      `;
   },
 
   // Nothing to refresh: this page only shows static values and editable inputs we must not overwrite.
   refresh() {},
 
   actions: {
-    'save-cafe'() {
+    async 'save-cafe'() {
       const form = $('#cafe-form');
       UI.clearErrors(form);
       const value = (name) => $(`[name="${name}"]`, form).value.trim();
@@ -68,40 +64,21 @@ const Settings = {
         UI.showErrors(form, { cafeName: 'Enter the café name.' });
         return;
       }
-      Object.assign(DB.data.settings, {
+      await API.request('/settings', 'PATCH', {
         cafeName: value('cafeName'), address: value('address'),
         contactNumber: value('contactNumber'), openingHours: value('openingHours'),
       });
-      UI.toast('Café information saved.'); // TODO(API): PUT /api/settings
-      App.commit();
+      await App.commit();
+      UI.toast('Café information saved.');
     },
 
-    'pref-compact'(data, el) {
-      DB.data.settings.prefs.compactTables = el.checked;
-      App.applyPreferences();
-      App.commit();
+    async 'pref-compact'(data, el) {
+      await API.request('/settings/preferences', 'PATCH', { compactTables: el.checked, reduceMotion: DB.data.settings.prefs.reduceMotion });
+      await App.commit();
     },
-
-    'pref-motion'(data, el) {
-      DB.data.settings.prefs.reduceMotion = el.checked;
-      App.applyPreferences();
-      App.commit();
-    },
-
-    'reset-demo'() {
-      UI.confirm({
-        title: 'Reset all demo data?',
-        message: 'Every change you made in this browser will be replaced with fresh sample data. This cannot be undone.',
-        confirmLabel: 'Reset data', danger: true,
-      }).then((ok) => {
-        if (!ok) return;
-        DB.reset();
-        // Sample user IDs are the same after a reset; refresh the signed-in user's object from the new data.
-        App.user = Rules.getUser(App.user.id) || DB.data.users[0];
-        App.applyPreferences();
-        UI.toast('Demo data reset.');
-        App.showPage(App.currentPage);
-      });
+    async 'pref-motion'(data, el) {
+      await API.request('/settings/preferences', 'PATCH', { compactTables: DB.data.settings.prefs.compactTables, reduceMotion: el.checked });
+      await App.commit();
     },
   },
 };

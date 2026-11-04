@@ -283,18 +283,26 @@ const UI = {
     dlg.onclick = (event) => {
       if (event.target === dlg || event.target.closest('[data-modal-close]')) dlg.close();
     };
-    form.addEventListener('submit', (event) => {
-      event.preventDefault(); // we validate with JavaScript, not the browser's default popups
+    let pending = false;
+    dlg.oncancel = event => { if (pending) event.preventDefault(); };
+    const closeHandler = dlg.onclick;
+    dlg.onclick = event => { if (!pending) closeHandler(event); };
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (pending) return;
       UI.clearErrors(form);
       if (!onSubmit) { dlg.close(); return; }
       const values = Object.fromEntries(new FormData(form).entries());
-      const result = onSubmit(values, form);
-      if (result && result.failed) {
-        UI.showErrors(form, result.errors, result.message);
-        return;
-      }
-      dlg.close();
-      if (result && typeof result.done === 'function') result.done();
+      const buttons = Array.from(dlg.querySelectorAll('button'));
+      pending = true;
+      buttons.forEach(button => { button.disabled = true; });
+      try {
+        const result = await onSubmit(values, form);
+        if (result && result.failed) { UI.showErrors(form, result.errors, result.message); return; }
+        dlg.close();
+        if (result && typeof result.done === 'function') result.done();
+      } catch (error) { UI.showErrors(form, error.errors || {}, error.message); }
+      finally { pending = false; buttons.forEach(button => { button.disabled = false; }); }
     });
 
     if (!dlg.open) dlg.showModal();

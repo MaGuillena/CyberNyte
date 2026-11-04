@@ -1,13 +1,4 @@
-/* ==========================================================================
-   users.js — Screen 9: User Management (administrator only)
-   --------------------------------------------------------------------------
-   !! SECURITY NOTE !!
-   Hiding this page for staff accounts is only a USABILITY feature of the
-   frontend prototype. Anyone can open the browser's developer tools and
-   bypass it. When the backend exists, the Express API MUST check the user's
-   role on every request (e.g. a middleware that rejects non-admins) and the
-   passwords MUST be hashed (bcrypt/argon2). Never rely on frontend checks.
-   ========================================================================== */
+/* Admin account management. Express enforces the same role restrictions. */
 'use strict';
 
 const Users = {
@@ -21,7 +12,6 @@ const Users = {
         subtitle: 'Staff accounts and roles',
         actionsHtml: `<button type="button" class="btn btn-primary" data-action="add">${icon('plus')} Add Staff Account</button>`,
       })}
-      <p class="notice notice-info">${icon('shield')} Prototype note: role checks here run in the browser only and are not real security. The backend must enforce roles later.</p>
       <section class="card" aria-label="Staff accounts"><div id="user-table"></div></section>`;
   },
 
@@ -72,7 +62,7 @@ const Users = {
           hint: isEdit ? 'Leave blank to keep the current password.' : 'At least 6 characters.', attrs: 'autocomplete="new-password"',
         }),
       ].join(''),
-      onSubmit: (v) => {
+      onSubmit: async (v) => {
         const errors = {};
         const fullName = v.fullName.trim().replace(/\s+/g, ' ');
         const username = v.username.trim();
@@ -89,17 +79,8 @@ const Users = {
         }
         if (Object.keys(errors).length) return UI.fail('Please fix the highlighted fields.', errors);
 
-        if (isEdit) {
-          Object.assign(user, { fullName, username, role: v.role });
-          if (v.password) user.password = v.password; // DEMO ONLY: real systems store a hash, never the password
-          if (user.id === App.user.id) App.showUserInfo(); // keep the sidebar name/role in sync
-          UI.toast(`${fullName} updated.`);
-        } else {
-          // TODO(API): POST /api/users — the server hashes the password.
-          DB.data.users.push({ id: DB.nextId('user', 'U', 3), fullName, username, password: v.password, role: v.role, active: true });
-          UI.toast(`Account created for ${fullName}.`);
-        }
-        App.commit();
+        await API.request('/users' + (isEdit ? '/' + user.id : ''), isEdit ? 'PATCH' : 'POST', { fullName, username, role: v.role, password: v.password });
+        await App.commit(); UI.toast('Account saved.');
       },
     });
   },
@@ -108,27 +89,23 @@ const Users = {
     add() { Users.openForm(); },
     edit(data) { Users.openForm(data.id); },
 
-    deactivate(data) {
+    async deactivate(data) {
       const user = Rules.getUser(data.id);
       if (user.id === App.user.id) { UI.toast('You can’t deactivate the account you are signed in with.', 'error'); return; }
       if (user.role === 'admin' && Users.activeAdminCount() <= 1) { UI.toast('At least one administrator account must stay active.', 'error'); return; }
-      UI.confirm({
+      const confirmed = await UI.confirm({
         title: `Deactivate ${user.fullName}?`,
         message: 'They will no longer be able to sign in. You can activate the account again at any time.',
         confirmLabel: 'Deactivate', danger: true,
-      }).then((ok) => {
-        if (!ok) return;
-        user.active = false; // TODO(API): PATCH /api/users/:id { active:false }
-        UI.toast(`${user.fullName} deactivated.`);
-        App.commit();
       });
+      if (!confirmed) return;
+      await API.request('/users/' + user.id, 'PATCH', { active: false });
+      await App.commit(); UI.toast('Account deactivated.');
     },
 
-    activate(data) {
-      const user = Rules.getUser(data.id);
-      user.active = true;
-      UI.toast(`${user.fullName} activated.`);
-      App.commit();
+    async activate(data) {
+      await API.request('/users/' + data.id, 'PATCH', { active: true });
+      await App.commit(); UI.toast('Account activated.');
     },
   },
 };

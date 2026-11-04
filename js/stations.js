@@ -121,7 +121,7 @@ const Stations = {
           hint: 'In Use and Reserved are set automatically by sessions and reservations.',
         }),
       ].join(''),
-      onSubmit: (v) => {
+      onSubmit: async (v) => {
         const errors = {};
         const name = v.name.trim();
         const specs = v.specs.trim();
@@ -140,15 +140,8 @@ const Stations = {
         }
         if (Object.keys(errors).length) return UI.fail('Please fix the highlighted fields.', errors);
 
-        if (isEdit) {
-          Object.assign(station, { name, specs, hourlyRate: Rules.round2(rate), status: v.status });
-          UI.toast(`${name} updated.`);
-        } else {
-          // TODO(API): POST /api/stations
-          DB.data.stations.push({ id: DB.nextId('station', 'ST', 2), name, specs, hourlyRate: Rules.round2(rate), status: v.status, active: true });
-          UI.toast(`${name} added.`);
-        }
-        App.commit();
+        await API.request('/stations' + (isEdit ? '/' + station.id : ''), isEdit ? 'PATCH' : 'POST', { name, specs, hourlyRate: rate, status: v.status });
+        await App.commit(); UI.toast('Station saved.');
       },
     });
   },
@@ -195,7 +188,7 @@ const Stations = {
     start(data) { Sessions.openStartModal(data.id); },
 
     /** Deactivate = soft delete: the station and its history are kept, but it can no longer be used. */
-    deactivate(data) {
+    async deactivate(data) {
       const station = Rules.getStation(data.id);
       if (Rules.activeSessionForStation(station.id)) {
         UI.toast(`${station.name} has an active session. End it before deactivating.`, 'error');
@@ -206,23 +199,19 @@ const Stations = {
         UI.toast(`${station.name} still has ${pending} upcoming reservation${pending > 1 ? 's' : ''}. Cancel or edit them first.`, 'error');
         return;
       }
-      UI.confirm({
+      const confirmed = await UI.confirm({
         title: `Deactivate ${station.name}?`,
         message: 'The station will be hidden from session and reservation forms. Its history is kept and you can reactivate it later.',
         confirmLabel: 'Deactivate', danger: true,
-      }).then((ok) => {
-        if (!ok) return;
-        station.active = false; // TODO(API): PATCH /api/stations/:id { active:false }
-        UI.toast(`${station.name} deactivated.`);
-        App.commit();
       });
+      if (!confirmed) return;
+      await API.request('/stations/' + station.id, 'PATCH', { active: false });
+      await App.commit(); UI.toast('Station deactivated.');
     },
 
-    reactivate(data) {
-      const station = Rules.getStation(data.id);
-      station.active = true;
-      UI.toast(`${station.name} reactivated.`);
-      App.commit();
+    async reactivate(data) {
+      await API.request('/stations/' + data.id, 'PATCH', { active: true });
+      await App.commit(); UI.toast('Station reactivated.');
     },
   },
 };

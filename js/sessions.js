@@ -112,7 +112,7 @@ const Sessions = {
         select.addEventListener('change', showRate);
         showRate();
       },
-      onSubmit: (v) => {
+      onSubmit: async (v) => {
         const errors = {};
         if (!v.customerId) errors.customerId = 'Choose a customer.';
         if (!v.stationId) errors.stationId = 'Choose an available station.';
@@ -123,22 +123,8 @@ const Sessions = {
         }
         if (Object.keys(errors).length) return UI.fail('This session can’t be started yet.', errors);
 
-        const station = Rules.getStation(v.stationId);
-        // TODO(API): POST /api/sessions — the SERVER must stamp startTime so staff can't change it.
-        // The station becomes "In Use" automatically because its status is derived from this active session.
-        DB.data.sessions.push({
-          id: DB.nextId('session', 'S'),
-          customerId: v.customerId,
-          stationId: station.id,
-          startTime: new Date().toISOString(),
-          endTime: null,
-          hourlyRate: station.hourlyRate,
-          status: 'active',
-          charge: null,
-          startedBy: App.user.id,
-        });
-        UI.toast(`Session started on ${station.name} for ${Rules.customerName(v.customerId)}.`);
-        App.commit();
+        await API.request('/sessions', 'POST', { customerId: v.customerId, stationId: v.stationId });
+        await App.commit(); UI.toast('Session started.');
       },
     });
   },
@@ -167,19 +153,15 @@ const Sessions = {
       ])}
       <p class="field-hint">The final end time and charge are recorded the moment you confirm.</p>
       <label class="checkbox"><input type="checkbox" name="payNow" checked> Record the payment right after ending</label>`,
-      onSubmit: (v) => {
+      onSubmit: async (v) => {
         // Re-read the session: it may have been ended elsewhere while this dialog was open.
         const live = Rules.getSession(sessionId);
         if (!live || live.status !== 'active') return UI.fail('This session was already ended.');
 
-        const end = new Date();
-        live.endTime = end.toISOString();
-        live.charge = Rules.calculateCharge(live.hourlyRate, Rules.elapsedMinutes(live.startTime, live.endTime));
-        live.status = 'completed'; // station becomes Available again automatically (derived status)
-
-        UI.toast(`Session ${live.id} ended. Charge: ${Fmt.currency(live.charge)}.`);
-        App.commit();
-        if (v.payNow && live.charge > 0) return { done: () => Payments.openRecordModal(live.id) };
+        const ended = await API.request('/sessions/' + live.id + '/end', 'PATCH');
+        await App.commit();
+        UI.toast('Session ended. Charge: ' + Fmt.currency(ended.charge));
+        if (v.payNow && ended.charge > 0) return { done: () => Payments.openRecordModal(live.id) };
       },
     });
   },

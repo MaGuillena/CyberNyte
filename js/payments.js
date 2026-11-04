@@ -193,7 +193,7 @@ const Payments = {
         select.addEventListener('change', () => update(true));
         update(Boolean(select.value));
       },
-      onSubmit: (v) => {
+      onSubmit: async (v) => {
         const errors = {};
         const session = Rules.getSession(v.sessionId);
         if (!session) errors.sessionId = 'Choose the session being paid.';
@@ -206,21 +206,8 @@ const Payments = {
         if (!Rules.PAYMENT_METHODS.includes(v.method)) errors.method = 'Choose a payment method.';
         if (Object.keys(errors).length) return UI.fail('The payment was not recorded.', errors);
 
-        // TODO(API): POST /api/payments — the server must recompute the balance itself.
-        DB.data.payments.push({
-          id: DB.nextId('payment', 'P'),
-          sessionId: session.id,
-          customerId: session.customerId,
-          amount: Rules.round2(amount),
-          method: v.method,
-          date: new Date().toISOString(),
-          recordedBy: App.user.id,
-        });
-        const after = Rules.billing(session);
-        UI.toast(after.status === 'paid'
-          ? `Payment recorded. ${session.id} is fully paid.`
-          : `Partial payment recorded. ${Fmt.currency(after.balance)} still unpaid on ${session.id}.`);
-        App.commit();
+        await API.request('/payments', 'POST', { sessionId: v.sessionId, amount, method: v.method });
+        await App.commit(); UI.toast('Payment recorded.');
       },
     });
   },

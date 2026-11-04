@@ -24,9 +24,9 @@ const PAGES = {
   reports: Reports,
   users: Users,
   settings: Settings,
+  categories: Categories,
 };
 
-const SESSION_KEY = 'cafenyte_session_user'; // sessionStorage: who is signed in (cleared when the tab closes)
 const REMEMBER_KEY = 'cafenyte_remembered_username'; // localStorage: username prefill only, never the password
 
 const App = {
@@ -34,22 +34,28 @@ const App = {
   currentPage: null,
 
   /* =============================== Startup =============================== */
-  init() {
-    DB.load();
+  async init() {
     UI.hydrateIcons();
     this.initLogo();
-    this.applyPreferences();
     this.bindLogin();
     this.bindShell();
-
-    // Keep the signed-in user across a page refresh (same tab).
-    const savedId = sessionStorage.getItem(SESSION_KEY);
-    const saved = savedId ? Rules.getUser(savedId) : null;
-    if (saved && saved.active) this.startSession(saved);
-    else this.showLogin();
-
-    // Running sessions and "upcoming" reservations depend on the clock, so redraw every 30 s.
-    setInterval(() => { if (this.user) this.refresh(); }, 30000);
+    this.showLogin();
+    try {
+      const user = await API.request('/auth/me');
+      await DB.load();
+      this.applyPreferences();
+      this.startSession(user);
+    } catch (error) { if (error.status !== 401) this.loginError(error.message); }
+    setInterval(async () => {
+      if (!this.user || document.querySelector('dialog[open]')) return;
+      try { await this.commit(); }
+      catch (error) { UI.toast(error.message, 'error'); }
+    }, 30000);
+  },
+  loginError(message) {
+    const banner = $('#login-error');
+    banner.textContent = message;
+    banner.hidden = false;
   },
 
   /**
@@ -93,43 +99,32 @@ const App = {
       toggle.innerHTML = icon(show ? 'eyeOff' : 'eye');
     });
 
-    form.addEventListener('submit', (event) => {
+    form.addEventListener('submit', async (event) => {
       event.preventDefault();
-      const username = usernameInput.value.trim();
-      const password = passwordInput.value;
-      const errors = { username: '', password: '', form: '' };
-
-      if (!username) errors.username = 'Enter your username.';
-      if (!password) errors.password = 'Enter your password.';
-      if (!errors.username && !errors.password) {
-        // TODO(API): POST /api/auth/login — the server verifies a password HASH and returns a token/session.
-        const user = DB.data.users.find((u) => u.username.toLowerCase() === username.toLowerCase() && u.password === password);
-        // WHY one vague message: never reveal whether the username or the password was wrong.
-        if (!user) errors.form = 'Incorrect username or password.';
-        else if (!user.active) errors.form = 'This account is deactivated. Ask an administrator to activate it.';
-        else {
-          if ($('#login-remember').checked) localStorage.setItem(REMEMBER_KEY, user.username);
-          else localStorage.removeItem(REMEMBER_KEY);
-          passwordInput.value = '';
-          this.startSession(user);
-          UI.toast(`Welcome back, ${user.fullName.split(' ')[0]}.`);
-          return;
-        }
-      }
-
-      $('#login-username-error').textContent = errors.username;
-      $('#login-password-error').textContent = errors.password;
-      usernameInput.toggleAttribute('aria-invalid', Boolean(errors.username));
-      passwordInput.toggleAttribute('aria-invalid', Boolean(errors.password));
-      const banner = $('#login-error');
-      banner.hidden = !errors.form;
-      banner.textContent = errors.form;
-      (errors.username ? usernameInput : passwordInput).focus();
+      UI.clearErrors(form);
+      const username = usernameInput.value.trim(), password = passwordInput.value;
+      if (!username || !password) { this.loginError('Enter your username and password.'); return; }
+      const submit = form.querySelector('[type="submit"]');
+      submit.disabled = true;
+      try {
+        const user = await API.request('/auth/login', 'POST', { username, password });
+        await DB.load();
+        if ($('#login-remember').checked) localStorage.setItem(REMEMBER_KEY, user.username);
+        else localStorage.removeItem(REMEMBER_KEY);
+        passwordInput.value = '';
+        this.applyPreferences();
+        this.startSession(user);
+        UI.toast('Signed in successfully.');
+      } catch (error) { this.loginError(error.message); }
+      finally { submit.disabled = false; }
     });
   },
 
   showLogin() {
     this.user = null;
+    this.currentPage = null;
+    FoodData.clearCart();
+    UI.closeModal();
     $('#app-view').hidden = true;
     $('#login-view').hidden = false;
     $('#login-password').value = '';
@@ -140,7 +135,6 @@ const App = {
 
   startSession(user) {
     this.user = user;
-    sessionStorage.setItem(SESSION_KEY, user.id);
     $('#login-view').hidden = true;
     $('#app-view').hidden = false;
     this.showUserInfo();
@@ -163,14 +157,15 @@ const App = {
       title: 'Log out of CyberNyte?',
       message: 'You will return to the login screen.',
       confirmLabel: 'Log out', cancelLabel: 'Stay signed in',
-    }).then((ok) => {
+    }).then(async (ok) => {
       if (!ok) return;
-      sessionStorage.removeItem(SESSION_KEY);
+      await API.request('/auth/logout', 'POST');
+      FoodData.clearCart();
       this.closeSidebar();
       history.replaceState(null, '', location.pathname);
       this.currentPage = null;
       this.showLogin();
-    });
+    }).catch(error => UI.toast(error.message, 'error'));
   },
 
   /* ================================ Router ================================ */
@@ -212,10 +207,16 @@ const App = {
   /* ============================ Data-change hook ============================ */
   /**
    * Call after ANY change to DB.data. One function = no screen can forget to update.
-   * TODO(API): once the backend exists, this becomes "re-fetch the affected data, then refresh()".
+   * Re-fetch committed database records, then update the existing UI.
    */
-  commit() {
-    DB.save();
+  async commit() {
+    await DB.load();
+    this.user = await API.request('/auth/me');
+    this.showUserInfo();
+    this.applyPreferences();
+    if (PAGES[this.currentPage]?.adminOnly && this.user.role !== 'admin') {
+      location.hash = '#dashboard'; return;
+    }
     this.refresh();
   },
 
@@ -236,12 +237,20 @@ const App = {
       if (!el) return;
       const page = PAGES[this.currentPage];
       const handler = page.actions && page.actions[el.dataset.action];
-      if (handler) handler.call(page, el.dataset, el);
+      if (handler) {
+        if (el.disabled) return;
+        el.disabled = true;
+        Promise.resolve().then(() => handler.call(page, el.dataset, el))
+          .catch(error => UI.toast(error.message, 'error'))
+          .finally(() => { el.disabled = false; });
+      }
     });
 
     // Search boxes / selects marked data-filter just ask the page to redraw its list.
     ['input', 'change'].forEach((type) => {
       content.addEventListener(type, (event) => {
+        // Text/date inputs already emitted input; rerendering on blur can swallow a row-button click.
+        if (type === 'change' && event.target.tagName !== 'SELECT') return;
         if (event.target.matches('[data-filter]')) PAGES[this.currentPage].refresh();
       });
     });
@@ -331,4 +340,4 @@ const App = {
   },
 };
 
-App.init();
+App.init().catch(error => App.loginError(error.message));

@@ -48,6 +48,7 @@ const Customers = {
           render: (c) => `<span class="row-actions">
             ${UI.iconButton({ name: 'eye', label: `View ${c.fullName}`, action: 'view', data: { id: c.id } })}
             ${UI.iconButton({ name: 'edit', label: `Edit ${c.fullName}`, action: 'edit', data: { id: c.id } })}
+            ${UI.iconButton({ name: 'x', label: `Delete ${c.fullName}`, action: 'delete', data: { id: c.id }, tone: 'danger' })}
           </span>`,
         },
       ],
@@ -67,7 +68,7 @@ const Customers = {
         UI.field({ label: 'Full name', name: 'fullName', required: true, value: customer?.fullName || '', placeholder: 'e.g. Juan Dela Cruz', attrs: 'maxlength="60" autocomplete="off"' }),
         UI.field({ label: 'Contact number', name: 'contactNumber', type: 'tel', value: customer?.contactNumber || '', placeholder: 'Optional', hint: 'Optional. Digits, spaces, + and - only.', attrs: 'maxlength="20" autocomplete="off"' }),
       ].join(''),
-      onSubmit: (v) => {
+      onSubmit: async (v) => {
         const errors = {};
         const fullName = v.fullName.trim().replace(/\s+/g, ' ');
         const contactNumber = v.contactNumber.trim();
@@ -83,15 +84,9 @@ const Customers = {
         }
         if (Object.keys(errors).length) return UI.fail('Please fix the highlighted fields.', errors);
 
-        if (isEdit) {
-          Object.assign(customer, { fullName, contactNumber });
-          UI.toast(`${fullName} updated.`);
-        } else {
-          // TODO(API): POST /api/customers
-          DB.data.customers.push({ id: DB.nextId('customer', 'C', 3), fullName, contactNumber, registeredAt: new Date().toISOString() });
-          UI.toast(`${fullName} added as a customer.`);
-        }
-        App.commit();
+        await API.request('/customers' + (isEdit ? '/' + customer.id : ''), isEdit ? 'PATCH' : 'POST', { fullName, contactNumber });
+        await App.commit();
+        UI.toast(isEdit ? 'Customer updated.' : 'Customer added.');
       },
     });
   },
@@ -131,6 +126,12 @@ const Customers = {
   },
 
   actions: {
+    async delete(data) {
+      const yes = await UI.confirm({ title: 'Delete customer?', message: 'Only customers without session or reservation history can be deleted.', confirmLabel: 'Delete', danger: true });
+      if (!yes) return;
+      await API.request('/customers/' + data.id, 'DELETE');
+      await App.commit(); UI.toast('Customer deleted.');
+    },
     add() { Customers.openForm(); },
     edit(data) { Customers.openForm(data.id); },
     view(data) { Customers.openDetails(data.id); },

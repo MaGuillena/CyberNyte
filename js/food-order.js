@@ -1,94 +1,7 @@
-/* ==========================================================================
-   food-orders.js — Food Availability and Food Orders (frontend demonstration)
-   --------------------------------------------------------------------------
-   WHAT THIS FILE DOES
-     - FoodAvailability page: staff see every menu item and mark it Available
-       or Out of Stock. The item is never deleted; only its flag changes.
-     - FoodOrders page: staff build a customer order (add, change quantity,
-       remove), place it as a simulated transaction, and move it through
-       Pending -> Preparing -> Completed (or Cancelled).
-     - Both pages share ONE data source: DB.data.foodItems. Availability set on
-       the Availability page is what the Orders page reads.
-
-   WHY ONE FILE, TWO MODULES
-     The pages are tightly linked (shared menu, availability flag and cart), so
-     keeping them together avoids passing data between files. Each page is still
-     its own module object, which app.js routes to by URL hash.
-
-   WHAT IS SAVED
-     Availability and placed orders go through App.commit(), the app's
-     "data changed" hook, so they survive a refresh like every other feature.
-     The order being built (the cart) lives in memory only: a half-finished
-     order should not survive a page reload.
-
-   DEMO ONLY: no payment is processed. Placing an order only records it.
-   ========================================================================== */
+/* Database-backed food availability, cart, and order workflow. */
 'use strict';
 
-/* ==========================================================================
-   1. FOOD MENU DATA — EDIT THIS ARRAY ONLY
-   --------------------------------------------------------------------------
-   Each line is one menu item. To change something:
-     - name, description, price ..... edit the text or number inside the quotes
-     - image ........................ replace the path with your own photo.
-         Save photos in assets/images/food/ and keep the file name, or edit the
-         path to match your file. Recommended: JPG or PNG, about 800 x 600 px.
-         If the file is missing, a grey placeholder box is shown instead.
-     - featured: true ............... shows a "Featured" badge on the card
-     - To ADD an item: copy a line and give it a NEW id (FD-029, FD-030 ...).
-     - To REMOVE an item: delete its line. Past orders keep their saved name
-       and price, so old receipts never change.
-   WHY ids matter: availability and orders refer to items by id. Never change
-   an existing id.
-   ========================================================================== */
-const FOOD_MENU = [
-  // ---- Instant Noodles and Pancit ----
-  { id: 'FD-001', category: 'pancit', name: 'Classic Pancit Canton', price: 35, featured: true, description: 'Stir-fried canton noodles with vegetables and a savory sauce.', image: 'assets/images/food/pancit-canton.jpg' },
-  { id: 'FD-002', category: 'pancit', name: 'Extra Hot Pancit Canton', price: 35, description: 'Classic canton with extra chili for spice lovers.', image: 'assets/images/food/pancit-canton-extra-hot.jpg' },
-  { id: 'FD-003', category: 'pancit', name: 'Sweet and Spicy Pancit Canton', price: 35, description: 'Balanced sweet and spicy flavor, served hot.', image: 'assets/images/food/pancit-canton-sweet-spicy.jpg' },
-  { id: 'FD-004', category: 'pancit', name: 'Pancit Canton with Egg', price: 45, description: 'Canton topped with a fried egg.', image: 'assets/images/food/pancit-canton-egg.jpg' },
-  { id: 'FD-005', category: 'pancit', name: 'Lucky Me! Instant Noodles (Beef)', price: 30, description: 'Ready-to-cook beef flavor instant noodles.', image: 'assets/images/food/lucky-me-beef.jpg' },
-  { id: 'FD-006', category: 'pancit', name: 'Lucky Me! Instant Noodles (Chicken)', price: 30, description: 'Ready-to-cook chicken flavor instant noodles.', image: 'assets/images/food/lucky-me-chicken.jpg' },
-
-  // ---- Rice Meals ----
-  { id: 'FD-007', category: 'rice', name: 'Siomai Rice', price: 55, description: 'Steamed siomai with garlic rice and sauce.', image: 'assets/images/food/siomai-rice.jpg' },
-  { id: 'FD-008', category: 'rice', name: 'Shanghai Rice', price: 60, description: 'Crispy lumpia shanghai served with rice.', image: 'assets/images/food/shanghai-rice.jpg' },
-  { id: 'FD-009', category: 'rice', name: 'Hotdog Rice', price: 55, description: 'Pan-fried hotdog with garlic rice and egg.', image: 'assets/images/food/hotdog-rice.jpg' },
-  { id: 'FD-010', category: 'rice', name: 'Egg Fried Rice', price: 45, description: 'Fried rice with egg and garlic.', image: 'assets/images/food/egg-fried-rice.jpg' },
-  { id: 'FD-011', category: 'rice', name: 'Hotdog Silog', price: 65, description: 'Hotdog, fried egg and garlic rice.', image: 'assets/images/food/hotdog-silog.jpg' },
-
-  // ---- Snacks ----
-  { id: 'FD-012', category: 'snacks', name: 'French Fries', price: 50, description: 'Crispy golden fries, lightly salted.', image: 'assets/images/food/french-fries.jpg' },
-  { id: 'FD-013', category: 'snacks', name: 'Cheese Sticks', price: 55, description: 'Breaded cheese sticks with a gooey center.', image: 'assets/images/food/cheese-sticks.jpg' },
-  { id: 'FD-014', category: 'snacks', name: 'Lumpiang Shanghai', price: 50, description: 'Five pieces of crispy meat rolls.', image: 'assets/images/food/lumpiang-shanghai.jpg' },
-  { id: 'FD-015', category: 'snacks', name: 'Siomai', price: 40, description: 'Four pieces of steamed siomai.', image: 'assets/images/food/siomai.jpg' },
-  { id: 'FD-016', category: 'snacks', name: 'Hotdog Sandwich', price: 45, description: 'Hotdog in a soft bun with sauce.', image: 'assets/images/food/hotdog-sandwich.jpg' },
-  { id: 'FD-017', category: 'snacks', name: 'Chicken Nuggets', price: 70, description: 'Six pieces of crispy chicken nuggets.', image: 'assets/images/food/chicken-nuggets.jpg' },
-  { id: 'FD-018', category: 'snacks', name: 'Nachos', price: 80, description: 'Tortilla chips with cheese sauce.', image: 'assets/images/food/nachos.jpg' },
-
-  // ---- Burgers and Sandwiches ----
-  { id: 'FD-019', category: 'burgers', name: 'Classic Burger', price: 75, description: 'Beef patty with lettuce, tomato and sauce.', image: 'assets/images/food/classic-burger.jpg' },
-  { id: 'FD-020', category: 'burgers', name: 'Cheeseburger', price: 90, description: 'Classic burger with a slice of cheese.', image: 'assets/images/food/cheeseburger.jpg' },
-  { id: 'FD-021', category: 'burgers', name: 'Chicken Sandwich', price: 85, description: 'Breaded chicken fillet in a toasted bun.', image: 'assets/images/food/chicken-sandwich.jpg' },
-
-  // ---- Drinks ----
-  { id: 'FD-022', category: 'drinks', name: 'Bottled Water', price: 20, description: 'Chilled 500 ml bottled water.', image: 'assets/images/food/bottled-water.jpg' },
-  { id: 'FD-023', category: 'drinks', name: 'Canned Soft Drinks', price: 35, description: 'Chilled can of soft drink.', image: 'assets/images/food/soft-drinks.jpg' },
-  { id: 'FD-024', category: 'drinks', name: 'Iced Tea', price: 35, description: 'Sweet iced tea over ice.', image: 'assets/images/food/iced-tea.jpg' },
-  { id: 'FD-025', category: 'drinks', name: 'Iced Coffee', price: 60, description: 'Cold brewed coffee with milk and ice.', image: 'assets/images/food/iced-coffee.jpg' },
-  { id: 'FD-026', category: 'drinks', name: '3-in-1 Coffee', price: 25, description: 'Instant coffee, creamer and sugar in one sachet.', image: 'assets/images/food/3-in-1-coffee.jpg' },
-  { id: 'FD-027', category: 'drinks', name: 'Milk Tea', price: 55, description: 'Creamy milk tea, served cold.', image: 'assets/images/food/milk-tea.jpg' },
-  { id: 'FD-028', category: 'drinks', name: 'Energy Drinks', price: 50, description: 'Chilled energy drink for long gaming sessions.', image: 'assets/images/food/energy-drinks.jpg' },
-];
-
-/* Category labels shown in the filters and on cards. Keys must match `category` above. */
-const FOOD_CATEGORIES = {
-  pancit: 'Instant Noodles and Pancit',
-  rice: 'Rice Meals',
-  snacks: 'Snacks',
-  burgers: 'Burgers and Sandwiches',
-  drinks: 'Drinks',
-};
+let FOOD_CATEGORIES = {};
 
 /* Ordering rules. Edit these numbers to change how orders are calculated. */
 const FOOD_CONFIG = {
@@ -122,68 +35,15 @@ const FoodData = {
     cancelled: [],
   },
 
-  /**
-   * Makes sure DB.data has the food collections and applies menu edits.
-   * WHY: data.js (seed data) knows nothing about food, so the first run creates
-   * the collections here. Every run re-reads FOOD_MENU so a name, price or image
-   * you edit shows up on the next page load. The staff's saved Available/Out of
-   * Stock choice is kept during that merge.
-   * Rules.foodAndDrinkAvailability() already reads DB.data.foodItems, so the
-   * rest of the app sees these items too.
-   */
+  // Refresh labels from the category records loaded from MySQL.
   ensure() {
-    const data = DB.data;
-    if (!data.counters) data.counters = {};
-    const savedItems = Array.isArray(data.foodItems) ? data.foodItems : [];
-
-    data.foodItems = FOOD_MENU.map((entry) => {
-      const saved = savedItems.find((item) => item.id === entry.id);
-      return {
-        id: entry.id,
-        name: entry.name,
-        category: entry.category,
-        description: entry.description,
-        price: entry.price,
-        featured: Boolean(entry.featured),
-        image: entry.image,
-        // New items start Available. Existing items keep the staff's choice.
-        available: saved ? saved.available !== false : true,
-      };
-    });
-
-    if (!Array.isArray(data.foodOrders)) data.foodOrders = [];
-    // counters.foodOrder is undefined only before the first run, so seed once.
-    if (data.counters.foodOrder === undefined) this.seedSampleOrders();
-  },
-
-  /** Two example orders so the history table is not empty on first open. */
-  seedSampleOrders() {
-    const minutesAgo = (m) => new Date(Date.now() - m * 60000).toISOString();
-    const line = (foodId, quantity) => {
-      const entry = FOOD_MENU.find((e) => e.id === foodId);
-      return { foodId, name: entry.name, unitPrice: entry.price, quantity, lineTotal: Rules.round2(entry.price * quantity) };
-    };
-    const order = (id, minutes, status, lines) => ({
-      id,
-      createdAt: minutesAgo(minutes),
-      createdBy: 'U-002',
-      status,
-      items: lines,
-      ...this.totals(lines),
-    });
-
-    DB.data.foodOrders = [
-      order('FO-0001', 95, 'completed', [line('FD-001', 2), line('FD-025', 1)]),
-      order('FO-0002', 20, 'preparing', [line('FD-012', 1), line('FD-028', 2)]),
-    ];
-    // nextId() continues from here, so the next order becomes FO-0003.
-    DB.data.counters.foodOrder = DB.data.foodOrders.length;
+    FOOD_CATEGORIES = Object.fromEntries(DB.data.categories.map(category => [category.id, category.name]));
   },
 
   getItem(id) { return DB.data.foodItems.find((item) => item.id === id) || null; },
 
   /** An item is orderable only when it exists and staff have not marked it Out of Stock. */
-  isAvailable(item) { return Boolean(item) && item.available !== false; },
+  isAvailable(item) { return Boolean(item) && item.available !== false && DB.data.categories.some(category => category.id === item.categoryId && category.active); },
 
   /**
    * Filters menu items. Used by both pages so the search and filter behave the same.
@@ -272,26 +132,14 @@ const FoodData = {
    * WHY it re-checks stock: staff may have marked an item Out of Stock while the
    * order was still open. The check here is the final guard.
    */
-  placeOrder() {
+  async placeOrder() {
     const lines = this.cartLines();
-    if (!lines.length) return { error: 'Add at least one item before placing an order.' };
-
-    const blocked = lines.filter((l) => !l.available).map((l) => l.name);
-    if (blocked.length) {
-      return { error: `Remove out-of-stock items first: ${blocked.join(', ')}.` };
-    }
-
-    const order = {
-      id: DB.nextId('foodOrder', 'FO', 4), // e.g. FO-0003
-      createdAt: new Date().toISOString(),
-      createdBy: App.user ? App.user.id : null,
-      items: lines.map((l) => ({ foodId: l.foodId, name: l.name, unitPrice: l.unitPrice, quantity: l.quantity, lineTotal: l.lineTotal })),
-      ...this.totals(lines),
-      status: 'pending',
-    };
-    DB.data.foodOrders.push(order);
+    if (!lines.length) return { error: 'Add at least one item.' };
+    if (lines.some(line => !line.available)) return { error: 'Remove unavailable items first.' };
+    const saved = await API.request('/food-orders', 'POST', { items: this.cart.map(line => ({ foodId: line.foodId, quantity: line.quantity })) });
     this.clearCart();
-    return { order };
+    await App.commit();
+    return { order: DB.data.foodOrders.find(order => order.id === saved.id) };
   },
 
   canMove(from, to) { return (this.NEXT_STATUS[from] || []).includes(to); },
@@ -315,8 +163,9 @@ const FoodUI = {
   },
 
   categoryOptions() {
+    FoodData.ensure();
     return [{ value: 'all', label: 'All categories' },
-      ...Object.entries(FOOD_CATEGORIES).map(([value, label]) => ({ value, label }))];
+      ...DB.data.categories.map(category => ({ value: category.id, label: category.name + (category.active ? '' : ' (inactive)') }))];
   },
 
   statusOptions() {
@@ -353,7 +202,7 @@ const FoodAvailability = {
       ${UI.pageHeader({
         title: 'Food Availability',
         subtitle: 'Mark items Available or Out of Stock. Changes show on the Food Orders page right away.',
-        actionsHtml: `<a class="btn btn-secondary" href="#food-orders">${icon('peso')} View order <span id="avail-cart-count">(0)</span></a>`,
+        actionsHtml: `<button type="button" class="btn btn-primary" data-action="add-food">${icon('plus')} Add Food</button> <a class="btn btn-secondary" href="#categories">Categories</a> <a class="btn btn-secondary" href="#food-orders">${icon('peso')} View order <span id="avail-cart-count">(0)</span></a>`,
       })}
       <div class="toolbar card">
         <div class="search-box">
@@ -406,7 +255,7 @@ const FoodAvailability = {
     const id = esc(item.id);
     return `<article class="food-card ${available ? 'is-available' : 'is-out'}">
       <div class="food-image">
-        <!-- Shown until the real photo loads. Replace the photo path in FOOD_MENU. -->
+        <!-- Placeholder until the saved local image loads. -->
         <span class="food-image-placeholder" aria-hidden="true">${icon('inbox')}<small>No photo yet</small></span>
         <img src="${esc(item.image)}" alt="${esc(item.name)}" data-food-img hidden>
       </div>
@@ -421,6 +270,8 @@ const FoodAvailability = {
         ${FoodUI.availabilityBadge(available)}
       </div>
       <footer class="food-card-foot">
+        <button type="button" class="btn btn-sm btn-secondary" data-action="edit-food" data-id="${id}">Edit</button>
+        <button type="button" class="btn btn-sm btn-danger" data-action="delete-food" data-id="${id}">Delete</button>
         <button type="button" class="btn btn-sm btn-primary" data-action="add-to-order" data-id="${id}" ${available ? '' : 'disabled'}>${icon('plus')} Add to Order</button>
         <button type="button" class="btn btn-sm btn-secondary" data-action="toggle" data-id="${id}">${available ? 'Mark Out of Stock' : 'Mark Available'}</button>
       </footer>
@@ -438,12 +289,11 @@ const FoodAvailability = {
      * Flips Available <-> Out of Stock. The item stays in the menu; only its flag
      * changes. App.commit() saves and redraws, and the Orders page reads the same flag.
      */
-    toggle(data) {
+    async toggle(data) {
       const item = FoodData.getItem(data.id);
       if (!item) return;
-      item.available = !item.available;
-      UI.toast(`${item.name} is now ${item.available ? 'Available' : 'Out of Stock'}.`, item.available ? 'success' : 'info');
-      App.commit();
+      await API.request('/food-items/' + item.id, 'PATCH', { available: !item.available });
+      await App.commit(); UI.toast('Availability updated.');
     },
   },
 };
@@ -617,16 +467,15 @@ const FoodOrders = {
   },
 
   /** Moves an order to a new status, if the transition is allowed. */
-  changeStatus(orderId, nextStatus) {
+  async changeStatus(orderId, nextStatus) {
     const order = DB.data.foodOrders.find((o) => o.id === orderId);
     if (!order) return;
     if (!FoodData.canMove(order.status, nextStatus)) {
       UI.toast(`${order.id} is ${FOOD_STATUS[order.status].label} and cannot change to ${FOOD_STATUS[nextStatus].label}.`, 'error');
       return;
     }
-    order.status = nextStatus;
-    UI.toast(`${order.id} is now ${FOOD_STATUS[nextStatus].label}.`);
-    App.commit();
+    await API.request('/food-orders/' + orderId + '/status', 'PATCH', { status: nextStatus });
+    await App.commit(); UI.toast('Order status updated.');
   },
 
   /** Confirmation shown after an order is placed. */
@@ -634,7 +483,7 @@ const FoodOrders = {
     const count = order.items.reduce((sum, i) => sum + i.quantity, 0);
     UI.modal({
       title: 'Order placed',
-      subtitle: 'This is a simulated order. No payment was processed.',
+      subtitle: 'Order saved. Payment is handled separately.',
       submitLabel: null, // Close button only
       body: UI.detailList([
         ['Order ID', esc(order.id)],
@@ -691,26 +540,25 @@ const FoodOrders = {
       UI.confirm({ title: 'Clear this order?', message: 'All items in the current order will be removed.', confirmLabel: 'Clear order', danger: true })
         .then((ok) => { if (ok) { FoodData.clearCart(); App.refresh(); } });
     },
-    place() {
-      const result = FoodData.placeOrder();
+    async place() {
+      const result = await FoodData.placeOrder();
       if (result.error) {
         UI.toast(result.error, 'error');
         App.refresh();
         return;
       }
-      App.commit(); // saves the new order and redraws the page
       UI.toast(`Order ${result.order.id} placed.`);
       FoodOrders.showConfirmation(result.order);
     },
     view(data) { FoodOrders.showDetails(data.id); },
-    prepare(data) { FoodOrders.changeStatus(data.id, 'preparing'); },
-    complete(data) { FoodOrders.changeStatus(data.id, 'completed'); },
+    prepare(data) { return FoodOrders.changeStatus(data.id, 'preparing'); },
+    complete(data) { return FoodOrders.changeStatus(data.id, 'completed'); },
     cancel(data) {
-      UI.confirm({
+      return UI.confirm({
         title: `Cancel ${data.id}?`,
         message: 'The order will be marked Cancelled. Completed orders cannot be cancelled.',
         confirmLabel: 'Cancel order', cancelLabel: 'Keep order', danger: true,
-      }).then((ok) => { if (ok) FoodOrders.changeStatus(data.id, 'cancelled'); });
+      }).then((ok) => { if (ok) return FoodOrders.changeStatus(data.id, 'cancelled'); });
     },
   },
 };

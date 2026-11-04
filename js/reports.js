@@ -9,6 +9,7 @@
 
 const Reports = {
   title: 'Reports',
+  adminOnly: true,
   MAX_DAYS: 366, // WHY a cap: protects the daily table from absurdly large ranges
 
   render(container) {
@@ -138,15 +139,15 @@ const Reports = {
 
   /**
    * Downloads the transaction table as a CSV file.
-   * WHY a Blob + temporary link: it works fully in the browser with no server.
-   * TODO(API): a backend could generate the file instead (GET /api/reports/transactions.csv).
+   * The backend supplies authorized, current transactions; the browser formats the CSV.
    */
-  exportCsv() {
+  async exportCsv() {
     const range = this.getRange();
     if (!range) { UI.toast('Fix the date range before exporting.', 'error'); return; }
 
+    const report = await API.request('/reports?from=' + range.from + '&to=' + range.to);
     const header = ['Payment ID', 'Date', 'Time', 'Customer', 'Session', 'Station', 'Method', 'Amount (PHP)'];
-    const lines = Rules.paymentsInRange(range.from, range.to)
+    const lines = report.payments
       .sort((a, b) => new Date(a.date) - new Date(b.date))
       .map((p) => {
         const session = Rules.getSession(p.sessionId);
@@ -176,6 +177,6 @@ const Reports = {
 
   actions: {
     preset(data) { Reports.applyPreset(data.range); },
-    export() { Reports.exportCsv(); },
+    export() { return Reports.exportCsv(); },
   },
 };

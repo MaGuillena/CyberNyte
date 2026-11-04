@@ -120,23 +120,14 @@ const Reservations = {
           ${UI.field({ label: 'End time', name: 'endTime', type: 'time', required: true, value: resv?.endTime || '' })}
         </div>`,
       ].join(''),
-      onSubmit: (v) => {
+      onSubmit: async (v) => {
         const input = { id: resv?.id, customerId: v.customerId, stationId: v.stationId, date: v.date, startTime: v.startTime, endTime: v.endTime };
         const problem = Rules.validateReservation(input);
         if (problem) return UI.fail('This reservation can’t be saved. See the details below.', problem.errors);
 
-        if (isEdit) {
-          Object.assign(resv, { customerId: input.customerId, stationId: input.stationId, date: input.date, startTime: input.startTime, endTime: input.endTime });
-          UI.toast(`Reservation ${resv.id} updated.`);
-        } else {
-          // TODO(API): POST /api/reservations — the backend must run the same conflict checks.
-          DB.data.reservations.push({
-            id: DB.nextId('reservation', 'R'), ...input, status: 'confirmed',
-            createdAt: new Date().toISOString(), createdBy: App.user.id,
-          });
-          UI.toast('Reservation created.');
-        }
-        App.commit();
+        const body = { customerId: v.customerId, stationId: v.stationId, date: v.date, startTime: v.startTime, endTime: v.endTime };
+        await API.request('/reservations' + (isEdit ? '/' + resv.id : ''), isEdit ? 'PATCH' : 'POST', body);
+        await App.commit(); UI.toast('Reservation saved.');
       },
     });
   },
@@ -164,18 +155,16 @@ const Reservations = {
     edit(data) { Reservations.openForm(data.id); },
     details(data) { Reservations.openDetails(data.id); },
 
-    cancel(data) {
+    async cancel(data) {
       const r = Rules.getReservation(data.id);
-      UI.confirm({
+      const confirmed = await UI.confirm({
         title: `Cancel reservation ${r.id}?`,
         message: `${Rules.customerName(r.customerId)} on ${Fmt.dateKeyLabel(r.date)}, ${Fmt.timeOfDay(r.startTime)} – ${Fmt.timeOfDay(r.endTime)}. This cannot be undone.`,
         confirmLabel: 'Cancel reservation', cancelLabel: 'Keep reservation', danger: true,
-      }).then((ok) => {
-        if (!ok) return;
-        r.status = 'cancelled'; // TODO(API): PATCH /api/reservations/:id { status:'cancelled' }
-        UI.toast(`Reservation ${r.id} cancelled.`);
-        App.commit();
       });
+      if (!confirmed) return;
+      await API.request('/reservations/' + r.id, 'PATCH', { status: 'cancelled' });
+      await App.commit(); UI.toast('Reservation cancelled.');
     },
 
     'clear-filters'() {
