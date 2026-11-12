@@ -29,10 +29,9 @@ const Customers = {
     const holder = $('#customer-table');
     if (!holder) return;
     const query = $('#customer-search').value.trim().toLowerCase();
-    const rows = DB.data.customers
+   const rows = DB.data.customers
       .filter((c) => !query || c.fullName.toLowerCase().includes(query) || c.id.toLowerCase().includes(query))
-      .sort((a, b) => a.fullName.localeCompare(b.fullName));
-
+      .sort((a, b) => Number(a.id) - Number(b.id));
     holder.innerHTML = UI.table({
       caption: 'Customers',
       rows,

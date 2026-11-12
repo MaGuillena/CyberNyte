@@ -14,12 +14,17 @@ const root = path.join(__dirname, '..');
 const uploadDir = path.join(root, 'uploads/food');
 const ok = (res, data = null, message = 'OK', status = 200) => res.status(status).json({ success: true, data, message });
 
-app.disable('x-powered-by');
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '100kb' }));
 app.use(session({
   secret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'),
   resave: false, saveUninitialized: false,
-  cookie: { httpOnly: true, sameSite: 'strict', maxAge: 8 * 3600000 }
+  cookie: {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 8 * 3600000
+}
 }));
 
 // Same-origin frontend and API; no cross-origin credential sharing.
@@ -448,7 +453,7 @@ app.use((error, req, res, next) => {
 
 if (require.main === module) {
   const port = Number(process.env.PORT || 3000);
-  app.listen(port, '127.0.0.1', error => {
+  app.listen(port, '0.0.0.0', error => {
     if (error) { console.error(`Cannot start on port ${port}: ${error.message}`); process.exitCode = 1; return; }
     console.log(`CyberNyte: http://localhost:${port}`);
   });

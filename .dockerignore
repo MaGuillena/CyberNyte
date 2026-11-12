@@ -1,0 +1,13 @@
+
+node_modules/
+.git/
+.env
+.env.*
+tmp/
+test-results/
+playwright-report/
+docs/screenshots/
+npm-debug.log*
+
+uploads/food/*
+!uploads/food/.gitkeep
